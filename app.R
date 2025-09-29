@@ -136,20 +136,20 @@ ui <- page_navbar(
     "Dashboard",
     layout_columns(
       col_widths = c(4, 4, 4),
-      value_box(
-        title = "Total Students",
-        value = textOutput("total_students"),
-        showcase = icon("users")
+      card(
+        card_header("Total Students"),
+        div(style = "font-size: 48px; text-align: center; padding: 20px;",
+            textOutput("total_students"))
       ),
-      value_box(
-        title = "Interactions This Month",
-        value = textOutput("interactions_month"),
-        showcase = icon("comments")
+      card(
+        card_header("Interactions This Month"),
+        div(style = "font-size: 48px; text-align: center; padding: 20px;",
+            textOutput("interactions_month"))
       ),
-      value_box(
-        title = "Pending Commitments",
-        value = textOutput("pending_commitments"),
-        showcase = icon("tasks")
+      card(
+        card_header("Pending Commitments"),
+        div(style = "font-size: 48px; text-align: center; padding: 20px;",
+            textOutput("pending_commitments"))
       )
     ),
     layout_columns(
@@ -214,18 +214,30 @@ server <- function(input, output, session) {
 
   # Update graduation year filter choices
   observe({
-    conn <- get_db_connection()
-    on.exit(dbDisconnect(conn))
-    years <- dbGetQuery(conn, "SELECT DISTINCT graduation_year FROM students WHERE graduation_year IS NOT NULL ORDER BY graduation_year")
-    choices <- c("All" = "", setNames(years$graduation_year, years$graduation_year))
-    updateSelectInput(session, "grad_year_filter", choices = choices)
+    tryCatch({
+      conn <- get_db_connection()
+      on.exit(dbDisconnect(conn))
+      years <- dbGetQuery(conn, "SELECT DISTINCT graduation_year FROM students WHERE graduation_year IS NOT NULL ORDER BY graduation_year")
+      choices <- c("All" = "", setNames(years$graduation_year, years$graduation_year))
+      updateSelectInput(session, "grad_year_filter", choices = choices)
+    }, error = function(e) {
+      cat("Error updating grad year filter:", e$message, "\n")
+    })
   })
 
   # Update student dropdown for interactions
   observe({
-    students <- students_data()
-    choices <- setNames(students$student_id, paste(students$first_name, students$last_name))
-    updateSelectInput(session, "interaction_student", choices = choices)
+    tryCatch({
+      students <- students_data()
+      if (nrow(students) > 0) {
+        choices <- setNames(students$student_id, paste(students$first_name, students$last_name))
+        updateSelectInput(session, "interaction_student", choices = choices)
+      } else {
+        updateSelectInput(session, "interaction_student", choices = c("No students yet" = ""))
+      }
+    }, error = function(e) {
+      cat("Error updating student dropdown:", e$message, "\n")
+    })
   })
 
   # Display students table
@@ -358,44 +370,78 @@ server <- function(input, output, session) {
   # Load commitments
   commitments_data <- reactive({
     rv$refresh
-    conn <- get_db_connection()
-    on.exit(dbDisconnect(conn))
 
-    query <- "SELECT c.commitment_id, c.student_id,
-              CONCAT(s.first_name, ' ', s.last_name) as student_name,
-              c.commitment_type, c.action_description, c.due_date,
-              c.is_complete, c.completed_date, c.notes
-              FROM commitments c
-              JOIN students s ON c.student_id = s.student_id
-              ORDER BY c.due_date"
+    tryCatch({
+      conn <- get_db_connection()
+      on.exit(dbDisconnect(conn))
 
-    commitments <- dbGetQuery(conn, query)
-    commitments$due_date <- as.Date(commitments$due_date)
-    if (!is.null(commitments$completed_date)) {
-      commitments$completed_date <- as.Date(commitments$completed_date)
-    }
+      query <- "SELECT c.commitment_id, c.student_id,
+                CONCAT(s.first_name, ' ', s.last_name) as student_name,
+                c.commitment_type, c.action_description, c.due_date,
+                c.is_complete, c.completed_date, c.notes
+                FROM commitments c
+                JOIN students s ON c.student_id = s.student_id
+                ORDER BY c.due_date"
 
-    # Apply filters
-    filtered <- commitments
+      commitments <- dbGetQuery(conn, query)
 
-    if (input$commitment_filter == "Active Only") {
-      filtered <- filtered %>% filter(is_complete == 0)
-    } else if (input$commitment_filter == "Overdue") {
-      filtered <- filtered %>% filter(is_complete == 0 & due_date < Sys.Date())
-    } else if (input$commitment_filter == "Completed") {
-      filtered <- filtered %>% filter(is_complete == 1)
-    } else if (input$commitment_filter == "Student Actions") {
-      filtered <- filtered %>% filter(commitment_type == "Student Action")
-    } else if (input$commitment_filter == "My Actions") {
-      filtered <- filtered %>% filter(commitment_type == "My Action")
-    }
+      if (nrow(commitments) == 0) {
+        return(data.frame(
+          commitment_id = integer(),
+          student_id = integer(),
+          student_name = character(),
+          commitment_type = character(),
+          action_description = character(),
+          due_date = as.Date(character()),
+          is_complete = integer(),
+          completed_date = as.Date(character()),
+          notes = character(),
+          stringsAsFactors = FALSE
+        ))
+      }
 
-    filtered
+      commitments$due_date <- as.Date(commitments$due_date)
+      if (!is.null(commitments$completed_date) && any(!is.na(commitments$completed_date))) {
+        commitments$completed_date <- as.Date(commitments$completed_date)
+      }
+
+      # Apply filters
+      filtered <- commitments
+
+      if (input$commitment_filter == "Active Only") {
+        filtered <- filtered %>% filter(is_complete == 0)
+      } else if (input$commitment_filter == "Overdue") {
+        filtered <- filtered %>% filter(is_complete == 0 & due_date < Sys.Date())
+      } else if (input$commitment_filter == "Completed") {
+        filtered <- filtered %>% filter(is_complete == 1)
+      } else if (input$commitment_filter == "Student Actions") {
+        filtered <- filtered %>% filter(commitment_type == "Student Action")
+      } else if (input$commitment_filter == "My Actions") {
+        filtered <- filtered %>% filter(commitment_type == "My Action")
+      }
+
+      filtered
+    }, error = function(e) {
+      showNotification(
+        paste("Error loading commitments:", e$message),
+        type = "error",
+        duration = NULL
+      )
+      data.frame()
+    })
   })
 
   # Display commitments table
   output$commitments_table <- renderDT({
     commitments <- commitments_data()
+
+    if (nrow(commitments) == 0) {
+      return(datatable(
+        data.frame(Message = "No commitments found"),
+        options = list(dom = 't', ordering = FALSE),
+        rownames = FALSE
+      ))
+    }
 
     display_data <- commitments %>%
       mutate(
