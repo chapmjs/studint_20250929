@@ -1,6 +1,10 @@
 # Student Interactions Tracking System
 # Shiny Application
 
+# WebSocket configuration for RStudio Server
+options(shiny.port = NULL)
+options(shiny.host = "0.0.0.0")
+
 library(shiny)
 library(bslib)
 library(DT)
