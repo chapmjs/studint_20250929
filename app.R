@@ -30,7 +30,7 @@ ui <- page_navbar(
     primary = "#2C3E50",
     base_font = font_google("Open Sans")
   ),
-  
+
   # Students Tab
   nav_panel(
     "Students",
@@ -47,7 +47,7 @@ ui <- page_navbar(
       )
     )
   ),
-  
+
   # Record Interaction Tab
   nav_panel(
     "Record Interaction",
@@ -57,14 +57,16 @@ ui <- page_navbar(
         card_header("New Interaction"),
         selectInput("interaction_student", "Select Student", choices = NULL),
         dateInput("interaction_date", "Date", value = Sys.Date()),
-        timeInput("interaction_time", "Time", value = Sys.time()),
+        textInput("interaction_time", "Time (HH:MM)",
+                  value = format(Sys.time(), "%H:%M"),
+                  placeholder = "14:30"),
         textInput("interaction_location", "Location", placeholder = "e.g., Office, Hallway, Zoom"),
         textAreaInput("interaction_notes", "Notes", rows = 6, placeholder = "What did you discuss?"),
         checkboxInput("add_commitment_check", "Add commitment from this interaction", FALSE),
         conditionalPanel(
           condition = "input.add_commitment_check == true",
-          selectInput("commitment_type_new", "Who will act?", 
-                     choices = c("Student Action", "My Action")),
+          selectInput("commitment_type_new", "Who will act?",
+                      choices = c("Student Action", "My Action")),
           textInput("commitment_action_new", "Action Description"),
           dateInput("commitment_due_new", "Due Date", value = Sys.Date() + 7)
         ),
@@ -72,7 +74,7 @@ ui <- page_navbar(
       )
     )
   ),
-  
+
   # Commitments Tab
   nav_panel(
     "Commitments",
@@ -80,9 +82,9 @@ ui <- page_navbar(
       sidebar = sidebar(
         width = 250,
         radioButtons("commitment_filter", "Filter",
-                    choices = c("All", "Active Only", "Overdue", "Completed", 
-                               "Student Actions", "My Actions"),
-                    selected = "Active Only"),
+                     choices = c("All", "Active Only", "Overdue", "Completed",
+                                 "Student Actions", "My Actions"),
+                     selected = "Active Only"),
         actionButton("add_commitment_btn", "New Commitment", class = "btn-primary w-100")
       ),
       card(
@@ -91,7 +93,7 @@ ui <- page_navbar(
       )
     )
   ),
-  
+
   # Dashboard Tab
   nav_panel(
     "Dashboard",
@@ -129,40 +131,40 @@ ui <- page_navbar(
 
 # Server
 server <- function(input, output, session) {
-  
+
   # Reactive values
   rv <- reactiveValues(refresh = 0)
-  
+
   # Load students
   students_data <- reactive({
     rv$refresh
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
-    query <- "SELECT student_id, first_name, last_name, email, major, 
-              graduation_month, graduation_year, hometown, phone, 
+
+    query <- "SELECT student_id, first_name, last_name, email, major,
+              graduation_month, graduation_year, hometown, phone,
               linkedin_url, social_media FROM students ORDER BY last_name, first_name"
     students <- dbGetQuery(conn, query)
-    
+
     # Apply filters
     if (nzchar(input$student_search)) {
       search_term <- tolower(input$student_search)
       students <- students %>%
         filter(
           grepl(search_term, tolower(first_name)) |
-          grepl(search_term, tolower(last_name)) |
-          grepl(search_term, tolower(major)) |
-          grepl(search_term, tolower(hometown))
+            grepl(search_term, tolower(last_name)) |
+            grepl(search_term, tolower(major)) |
+            grepl(search_term, tolower(hometown))
         )
     }
-    
+
     if (nzchar(input$grad_year_filter)) {
       students <- students %>% filter(graduation_year == as.integer(input$grad_year_filter))
     }
-    
+
     students
   })
-  
+
   # Update graduation year filter choices
   observe({
     conn <- get_db_connection()
@@ -171,14 +173,14 @@ server <- function(input, output, session) {
     choices <- c("All" = "", setNames(years$graduation_year, years$graduation_year))
     updateSelectInput(session, "grad_year_filter", choices = choices)
   })
-  
+
   # Update student dropdown for interactions
   observe({
     students <- students_data()
     choices <- setNames(students$student_id, paste(students$first_name, students$last_name))
     updateSelectInput(session, "interaction_student", choices = choices)
   })
-  
+
   # Display students table
   output$students_table <- renderDT({
     students <- students_data()
@@ -192,7 +194,7 @@ server <- function(input, output, session) {
         "Email" = email,
         "Hometown" = hometown
       )
-    
+
     datatable(
       display_data,
       options = list(pageLength = 10, dom = 'tip'),
@@ -200,7 +202,7 @@ server <- function(input, output, session) {
       rownames = FALSE
     )
   })
-  
+
   # Add student modal
   observeEvent(input$add_student_btn, {
     showModal(modalDialog(
@@ -209,10 +211,10 @@ server <- function(input, output, session) {
       textInput("new_last_name", "Last Name*", placeholder = "Required"),
       textInput("new_email", "Email"),
       textInput("new_phone", "Phone"),
-      selectInput("new_grad_month", "Graduation Month", 
-                 choices = c("", month.name)),
-      numericInput("new_grad_year", "Graduation Year", value = year(Sys.Date()), 
-                  min = year(Sys.Date()), max = year(Sys.Date()) + 10),
+      selectInput("new_grad_month", "Graduation Month",
+                  choices = c("", month.name)),
+      numericInput("new_grad_year", "Graduation Year", value = year(Sys.Date()),
+                   min = year(Sys.Date()), max = year(Sys.Date()) + 10),
       textInput("new_hometown", "Hometown"),
       textInput("new_major", "Major"),
       textInput("new_linkedin", "LinkedIn URL"),
@@ -223,18 +225,18 @@ server <- function(input, output, session) {
       )
     ))
   })
-  
+
   # Save new student
   observeEvent(input$save_student_btn, {
     req(input$new_first_name, input$new_last_name)
-    
+
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
-    query <- "INSERT INTO students (first_name, last_name, email, phone, 
+
+    query <- "INSERT INTO students (first_name, last_name, email, phone,
               graduation_month, graduation_year, hometown, major, linkedin_url, social_media)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    
+
     dbExecute(conn, query, params = list(
       input$new_first_name,
       input$new_last_name,
@@ -247,39 +249,46 @@ server <- function(input, output, session) {
       input$new_linkedin,
       input$new_social
     ))
-    
+
     rv$refresh <- rv$refresh + 1
     removeModal()
     showNotification("Student added successfully!", type = "message")
   })
-  
+
   # Save interaction
   observeEvent(input$save_interaction_btn, {
     req(input$interaction_student, input$interaction_date)
-    
+
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
+
     # Insert interaction
     query <- "INSERT INTO interactions (student_id, interaction_date, interaction_time, location, notes)
               VALUES (?, ?, ?, ?, ?)"
-    
+
+    # Parse time input (HH:MM format)
+    time_value <- if (nzchar(input$interaction_time)) {
+      paste0(input$interaction_time, ":00")  # Add seconds
+    } else {
+      NULL
+    }
+
     dbExecute(conn, query, params = list(
       as.integer(input$interaction_student),
       input$interaction_date,
-      format(input$interaction_time, "%H:%M:%S"),
+      time_value,
       input$interaction_location,
       input$interaction_notes
     ))
-    
+
     # Get the interaction ID
     interaction_id <- dbGetQuery(conn, "SELECT LAST_INSERT_ID() as id")$id
-    
+
     # Add commitment if checked
     if (input$add_commitment_check && nzchar(input$commitment_action_new)) {
-      commit_query <- "INSERT INTO commitments (student_id, interaction_id, commitment_type, 
+      commit_query <- "INSERT INTO commitments (student_id, interaction_id, commitment_type,
                        action_description, due_date) VALUES (?, ?, ?, ?, ?)"
-      
+
       dbExecute(conn, commit_query, params = list(
         as.integer(input$interaction_student),
         interaction_id,
@@ -288,40 +297,40 @@ server <- function(input, output, session) {
         input$commitment_due_new
       ))
     }
-    
+
     rv$refresh <- rv$refresh + 1
-    
+
     # Reset form
     updateTextInput(session, "interaction_location", value = "")
     updateTextAreaInput(session, "interaction_notes", value = "")
     updateCheckboxInput(session, "add_commitment_check", value = FALSE)
-    
+
     showNotification("Interaction recorded successfully!", type = "message")
   })
-  
+
   # Load commitments
   commitments_data <- reactive({
     rv$refresh
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
-    query <- "SELECT c.commitment_id, c.student_id, 
+
+    query <- "SELECT c.commitment_id, c.student_id,
               CONCAT(s.first_name, ' ', s.last_name) as student_name,
-              c.commitment_type, c.action_description, c.due_date, 
+              c.commitment_type, c.action_description, c.due_date,
               c.is_complete, c.completed_date, c.notes
               FROM commitments c
               JOIN students s ON c.student_id = s.student_id
               ORDER BY c.due_date"
-    
+
     commitments <- dbGetQuery(conn, query)
     commitments$due_date <- as.Date(commitments$due_date)
     if (!is.null(commitments$completed_date)) {
       commitments$completed_date <- as.Date(commitments$completed_date)
     }
-    
+
     # Apply filters
     filtered <- commitments
-    
+
     if (input$commitment_filter == "Active Only") {
       filtered <- filtered %>% filter(is_complete == 0)
     } else if (input$commitment_filter == "Overdue") {
@@ -333,18 +342,18 @@ server <- function(input, output, session) {
     } else if (input$commitment_filter == "My Actions") {
       filtered <- filtered %>% filter(commitment_type == "My Action")
     }
-    
+
     filtered
   })
-  
+
   # Display commitments table
   output$commitments_table <- renderDT({
     commitments <- commitments_data()
-    
+
     display_data <- commitments %>%
       mutate(
         Status = ifelse(is_complete == 1, "✓ Complete",
-                       ifelse(due_date < Sys.Date(), "⚠ Overdue", "Pending")),
+                        ifelse(due_date < Sys.Date(), "⚠ Overdue", "Pending")),
         due_date = format(due_date, "%Y-%m-%d")
       ) %>%
       select(student_name, commitment_type, action_description, due_date, Status) %>%
@@ -354,7 +363,7 @@ server <- function(input, output, session) {
         "Action" = action_description,
         "Due Date" = due_date
       )
-    
+
     datatable(
       display_data,
       options = list(pageLength = 15, dom = 'tip'),
@@ -369,7 +378,7 @@ server <- function(input, output, session) {
         )
       )
   })
-  
+
   # Dashboard metrics
   output$total_students <- renderText({
     conn <- get_db_connection()
@@ -377,70 +386,70 @@ server <- function(input, output, session) {
     count <- dbGetQuery(conn, "SELECT COUNT(*) as count FROM students")$count
     as.character(count)
   })
-  
+
   output$interactions_month <- renderText({
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    query <- "SELECT COUNT(*) as count FROM interactions 
-              WHERE MONTH(interaction_date) = MONTH(CURRENT_DATE()) 
+    query <- "SELECT COUNT(*) as count FROM interactions
+              WHERE MONTH(interaction_date) = MONTH(CURRENT_DATE())
               AND YEAR(interaction_date) = YEAR(CURRENT_DATE())"
     count <- dbGetQuery(conn, query)$count
     as.character(count)
   })
-  
+
   output$pending_commitments <- renderText({
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
     count <- dbGetQuery(conn, "SELECT COUNT(*) as count FROM commitments WHERE is_complete = 0")$count
     as.character(count)
   })
-  
+
   # Upcoming commitments
   output$upcoming_commitments <- renderDT({
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
+
     query <- "SELECT CONCAT(s.first_name, ' ', s.last_name) as student_name,
               c.action_description, c.due_date, c.commitment_type
               FROM commitments c
               JOIN students s ON c.student_id = s.student_id
               WHERE c.is_complete = 0 AND c.due_date <= DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY)
               ORDER BY c.due_date"
-    
+
     upcoming <- dbGetQuery(conn, query)
     if (nrow(upcoming) > 0) {
       upcoming %>%
-        rename("Student" = student_name, "Action" = action_description, 
+        rename("Student" = student_name, "Action" = action_description,
                "Due" = due_date, "Type" = commitment_type) %>%
         datatable(options = list(pageLength = 5, dom = 't'), rownames = FALSE)
     } else {
-      datatable(data.frame(Message = "No upcoming commitments"), 
-               options = list(dom = 't'), rownames = FALSE)
+      datatable(data.frame(Message = "No upcoming commitments"),
+                options = list(dom = 't'), rownames = FALSE)
     }
   })
-  
+
   # Recent interactions
   output$recent_interactions <- renderDT({
     conn <- get_db_connection()
     on.exit(dbDisconnect(conn))
-    
+
     query <- "SELECT CONCAT(s.first_name, ' ', s.last_name) as student_name,
               i.interaction_date, i.location, LEFT(i.notes, 50) as notes_preview
               FROM interactions i
               JOIN students s ON i.student_id = s.student_id
               ORDER BY i.interaction_date DESC, i.created_at DESC
               LIMIT 5"
-    
+
     recent <- dbGetQuery(conn, query)
     if (nrow(recent) > 0) {
       recent %>%
         mutate(notes_preview = paste0(notes_preview, "...")) %>%
-        rename("Student" = student_name, "Date" = interaction_date, 
+        rename("Student" = student_name, "Date" = interaction_date,
                "Location" = location, "Notes" = notes_preview) %>%
         datatable(options = list(pageLength = 5, dom = 't'), rownames = FALSE)
     } else {
-      datatable(data.frame(Message = "No recent interactions"), 
-               options = list(dom = 't'), rownames = FALSE)
+      datatable(data.frame(Message = "No recent interactions"),
+                options = list(dom = 't'), rownames = FALSE)
     }
   })
 }
