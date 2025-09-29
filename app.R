@@ -11,15 +11,52 @@ library(lubridate)
 
 # Database connection function
 get_db_connection <- function() {
-  dbConnect(
-    MySQL(),
-    host = Sys.getenv("DB_HOST"),
-    dbname = Sys.getenv("DB_NAME"),
-    user = Sys.getenv("DB_USER"),
-    password = Sys.getenv("DB_PASSWORD"),
-    port = as.integer(Sys.getenv("DB_PORT", "3306"))
-  )
+  tryCatch({
+    # Debug: print connection info (without password)
+    cat("Attempting to connect to database...\n")
+    cat("Host:", Sys.getenv("DB_HOST"), "\n")
+    cat("Database:", Sys.getenv("DB_NAME"), "\n")
+    cat("User:", Sys.getenv("DB_USER"), "\n")
+    cat("Port:", Sys.getenv("DB_PORT", "3306"), "\n")
+
+    conn <- dbConnect(
+      MySQL(),
+      host = Sys.getenv("DB_HOST"),
+      dbname = Sys.getenv("DB_NAME"),
+      user = Sys.getenv("DB_USER"),
+      password = Sys.getenv("DB_PASSWORD"),
+      port = as.integer(Sys.getenv("DB_PORT", "3306"))
+    )
+
+    cat("Database connection successful!\n")
+    return(conn)
+  }, error = function(e) {
+    cat("Database connection ERROR:", e$message, "\n")
+    stop(paste("Database connection failed:", e$message))
+  })
 }
+
+# Test database connection on startup
+cat("\n=== Testing Database Connection ===\n")
+test_conn <- tryCatch({
+  get_db_connection()
+}, error = function(e) {
+  cat("STARTUP ERROR: Cannot connect to database\n")
+  cat("Error message:", e$message, "\n")
+  cat("\nPlease check:\n")
+  cat("1. .Renviron file exists in project directory\n")
+  cat("2. Database credentials are correct\n")
+  cat("3. Database server is running and accessible\n")
+  NULL
+})
+
+if (!is.null(test_conn)) {
+  dbDisconnect(test_conn)
+  cat("Database connection test: SUCCESS\n")
+} else {
+  cat("Database connection test: FAILED\n")
+}
+cat("===================================\n\n")
 
 # UI
 ui <- page_navbar(
@@ -138,31 +175,41 @@ server <- function(input, output, session) {
   # Load students
   students_data <- reactive({
     rv$refresh
-    conn <- get_db_connection()
-    on.exit(dbDisconnect(conn))
 
-    query <- "SELECT student_id, first_name, last_name, email, major,
-              graduation_month, graduation_year, hometown, phone,
-              linkedin_url, social_media FROM students ORDER BY last_name, first_name"
-    students <- dbGetQuery(conn, query)
+    tryCatch({
+      conn <- get_db_connection()
+      on.exit(dbDisconnect(conn))
 
-    # Apply filters
-    if (nzchar(input$student_search)) {
-      search_term <- tolower(input$student_search)
-      students <- students %>%
-        filter(
-          grepl(search_term, tolower(first_name)) |
-            grepl(search_term, tolower(last_name)) |
-            grepl(search_term, tolower(major)) |
-            grepl(search_term, tolower(hometown))
-        )
-    }
+      query <- "SELECT student_id, first_name, last_name, email, major,
+                graduation_month, graduation_year, hometown, phone,
+                linkedin_url, social_media FROM students ORDER BY last_name, first_name"
+      students <- dbGetQuery(conn, query)
 
-    if (nzchar(input$grad_year_filter)) {
-      students <- students %>% filter(graduation_year == as.integer(input$grad_year_filter))
-    }
+      # Apply filters
+      if (nzchar(input$student_search)) {
+        search_term <- tolower(input$student_search)
+        students <- students %>%
+          filter(
+            grepl(search_term, tolower(first_name)) |
+              grepl(search_term, tolower(last_name)) |
+              grepl(search_term, tolower(major)) |
+              grepl(search_term, tolower(hometown))
+          )
+      }
 
-    students
+      if (nzchar(input$grad_year_filter)) {
+        students <- students %>% filter(graduation_year == as.integer(input$grad_year_filter))
+      }
+
+      students
+    }, error = function(e) {
+      showNotification(
+        paste("Database Error:", e$message),
+        type = "error",
+        duration = NULL
+      )
+      data.frame()  # Return empty data frame on error
+    })
   })
 
   # Update graduation year filter choices
